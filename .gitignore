@@ -1,0 +1,7 @@
+.vs
+out
+build
+vcpkg
+src/config.hpp
+roms
+CMakeSettings.json

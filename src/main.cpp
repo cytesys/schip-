@@ -1,10 +1,10 @@
-#include <iostream>
 #include <thread>
 
-#include "config.hpp"
-#include "memory.hpp"
-#include "chip.hpp"
-#include "display.hpp"
+#include <schip/config.h>
+#include <schip/common.h>
+#include <schip/memory.h>
+#include <schip/chip.h>
+#include <schip/display.h>
 
 int main(int argc, char** argv) {
 	if (argc < 2) {
@@ -17,10 +17,10 @@ int main(int argc, char** argv) {
 
 	try {
 		glutInit(&argc, argv);
-		MMU mmu;
-		Chip chip(mmu);
+		Bus bus;
+		Chip chip(bus);
 
-		mmu.load_program(argv[1]);
+		bus.load_program(argv[1]);
 
 		std::thread ct([&chip]() {
 			try {

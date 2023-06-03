@@ -1,27 +1,29 @@
 #pragma once
 
-#ifndef SCPP_DISPLAY
-#define SCPP_DISPLAY
+#ifndef DISPLAY_H
+#define DISPLAY_H
 
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 
-#include <array>
-#include <mutex>
+#ifdef __apple__
+#include <GLUT/glut.h>
+#else
 #include <GL/glut.h>
+#endif
+
+#include <schip/common.h>
 
 constexpr int SCR_WIDTH = 128;
 constexpr int SCR_HEIGHT = 64;
 constexpr int SCR_BUF_SIZE = SCR_WIDTH * SCR_HEIGHT;
 constexpr int SCR_ZOOM = 5;
-constexpr int KEY_SIZE = 16;
+constexpr int NUM_KEYS = 16;
 
 namespace Display {
-	extern std::mutex lock;
-
 	extern std::array<bool, (SCR_HEIGHT* SCR_WIDTH)> buffer;
-	extern std::array<bool, KEY_SIZE> keys;
+	extern std::array<bool, NUM_KEYS> keys;
 
 	void init();
 	void run();

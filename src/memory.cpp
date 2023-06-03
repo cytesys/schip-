@@ -1,17 +1,7 @@
-#include <stdexcept>
-#include <fstream>
-#include <sys/types.h>
-#include <sys/stat.h>
-
-#include "memory.hpp"
-#include "common.hpp"
-
-// The address space 0x200..0xe9f is allocated to the user
-// program. That leaves us with 0xca0 bytes.
-constexpr int BUF_SIZE = 0xca0;
+#include <schip/memory.h>
 
 // 4x5 pixel hexadecimal character font patterns
-constexpr std::array<uint8_t, 80> hexfont = {
+constexpr std::array<uint8_t, 80> HEX_FONT = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
     0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -31,7 +21,7 @@ constexpr std::array<uint8_t, 80> hexfont = {
 };
 
 // 8x10 pixel font patterns(only 10)
-constexpr std::array<uint8_t, 100> bigfont = {
+constexpr std::array<uint8_t, 100> BIG_HEX_FONT = {
     0x3c, 0x7e, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0x7e, 0x3c, // 0
     0x18, 0x38, 0x58, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3c, // 1
     0x3e, 0x7f, 0xc3, 0x06, 0x0c, 0x18, 0x30, 0x60, 0xff, 0xff, // 2
@@ -44,39 +34,39 @@ constexpr std::array<uint8_t, 100> bigfont = {
     0x3c, 0x7e, 0xc3, 0xc3, 0x7f, 0x3f, 0x03, 0x03, 0x3e, 0x7c  // 9
 };
 
-MMU::MMU() {
-    int i;
-    int index = 0;
+Bus::Bus() : m_data({}) {}
 
-    // Copy the hexfont into memory
-    for (i = 0; i < hexfont.size(); i++) {
-        this->m_mem.at(index++) = hexfont.at(i);
+Bus::~Bus() {}
+
+uint8_t Bus::read(uint16_t addr) const {
+    if (addr >= MEM_ADDR_END) {
+        fprintf(stderr, "Tried to read from address [0x%.4x]\n", addr);
+        throw std::out_of_range("Bus read: Address is out of range");
+    }
+    
+    if (addr < 0x50) {
+        return HEX_FONT.at(addr);
+    } else if (addr < 0xb4) {
+        return BIG_HEX_FONT.at(addr - 0x50);
+    } else if (addr < MEM_ADDR_BEG) {
+        // Empty/unused space
+        fprintf(stderr, "Warning: Reading garbage from [0x%.4x]\n", addr);
+        return 0xff;
     }
 
-    // Copy the big font into memory
-    for (i = 0; i < bigfont.size(); i++) {
-        this->m_mem.at(index++) = bigfont.at(i);
-    }
+    return this->m_data.at(addr - MEM_ADDR_BEG);
 }
 
-uint8_t MMU::read(uint16_t address) {
-    if (address >= 0x0 && address < 0x1000) {
-        return this->m_mem.at(address);
+void Bus::write(uint16_t addr, uint8_t byte) {
+    if (addr < MEM_ADDR_BEG || addr >= MEM_ADDR_END) {
+        fprintf(stderr, "Tried to write to address [0x%.4x]\n", addr);
+        throw std::out_of_range("Bus write: Address is out of range");
     }
 
-    throw std::out_of_range("Cannot read from address 0x" + n2hexstr(address));
+    this->m_data.at(addr - MEM_ADDR_BEG) = byte;
 }
 
-void MMU::write(uint16_t address, uint8_t byte) {
-    if (address >= 0x200 && address < 0x1000) {
-        this->m_mem.at(address) = byte;
-        return;
-    }
-
-    throw std::out_of_range("Cannot write to address 0x" + n2hexstr(address));
-}
-
-void MMU::load_program(const char* filename) {
+void Bus::load_program(const char* const filename) {
     struct stat info;
     int status = stat(filename, &info);
 
@@ -84,9 +74,8 @@ void MMU::load_program(const char* filename) {
         throw std::runtime_error("File not found!");
     }
     
-    int i, index = 0x200;
-    size_t read;
-    char buffer[BUF_SIZE] = {};
+    const size_t bufsize = MEM_ADDR_END - MEM_ADDR_BEG;
+    char buffer[bufsize] = {};
 
     std::ifstream file(
         filename,
@@ -94,25 +83,29 @@ void MMU::load_program(const char* filename) {
     );
 
     if (file.peek() != EOF) {
-        file.read(buffer, BUF_SIZE);
-        read = file.gcount();
+        file.read(buffer, bufsize);
+        size_t read = file.gcount();
 
-        // Copy everything into m_mem.
-        for (i = 0; i < read; i++) {
-            this->m_mem.at(index++) = buffer[i];
+        if (read == 0) {
+            throw std::runtime_error("Could not read from file; read 0 bytes");
         }
 
-        if ((read == BUF_SIZE) && (file.peek() != EOF)) {
+        // Copy everything into m_mem.
+        for (int i = 0; i < read; i++) {
+            this->m_data.at(i) = buffer[i];
+        }
+
+        if (file.peek() != EOF) {
             // There's more data??
             file.close();
             throw std::length_error(
-                "File is too big! Is the file really a chip8 program?"
+                "The file is too big! Is this really a chip8 program?"
             );
         }
 
     } else {
         file.close();
-        throw std::runtime_error("Cannot read from file");
+        throw std::runtime_error("Cannot read from file. Is it empty?");
     }
 
     file.close();

@@ -1,22 +1,16 @@
-#include <iostream>
-#include <chrono>
-#include <thread>
+#include <schip/display.h>
 
-#include "display.hpp"
-
-std::mutex Display::lock;
 std::array<bool, (SCR_HEIGHT* SCR_WIDTH)> Display::buffer = {};
-std::array<bool, KEY_SIZE> Display::keys = {};
+std::array<bool, NUM_KEYS> Display::keys = {};
 
 void Display::init() {
-	std::lock_guard lck(Display::lock);
-	
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
 	glutInitWindowSize(
 		SCR_WIDTH * SCR_ZOOM,
 		SCR_HEIGHT * SCR_ZOOM
 	);
 	glutCreateWindow("Chip8 Emulator");
+	glColor3f(1.0f, 1.0f, 1.0f);
 
 	glutDisplayFunc(Display::repaint);
 	glutReshapeFunc(Display::reshape);
@@ -29,31 +23,33 @@ void Display::init() {
 void Display::reshape(int w, int h) {
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	glOrtho(0.0f, SCR_WIDTH * SCR_ZOOM, SCR_HEIGHT * SCR_ZOOM, 0.0f, 0.0f, 1.0f);
+	glOrtho(
+		0.0f, SCR_WIDTH * SCR_ZOOM,
+		SCR_HEIGHT * SCR_ZOOM, 0.0f,
+		0.0f, 1.0f
+	);
 }
 
 void Display::repaint() {
 	int i, x, y;
 
-	if (Display::lock.try_lock()) {
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
 
-		for (i = 0; i < (SCR_WIDTH * SCR_HEIGHT); i++) {
-			if (Display::buffer.at(i)) {
-				x = (i % SCR_WIDTH) * SCR_ZOOM;
-				y = (i / SCR_WIDTH) * SCR_ZOOM;
+	for (i = 0; i < (SCR_WIDTH * SCR_HEIGHT); i++) {
+		if (Display::buffer.at(i)) {
+			x = (i % SCR_WIDTH) * SCR_ZOOM;
+			y = (i / SCR_WIDTH) * SCR_ZOOM;
 
-				glColor3f(1.0f, 1.0f, 1.0f);
-				glRecti(x, y, x + SCR_ZOOM, y + SCR_ZOOM);
-			}
+			glRecti(
+				x, y,
+				x + SCR_ZOOM,
+				y + SCR_ZOOM
+			);
 		}
-
-		Display::lock.unlock();
 	}
 
 	glutSwapBuffers();
-	std::this_thread::sleep_for(std::chrono::milliseconds(33));
 }
 
 int lookup_key(unsigned char key) {
@@ -99,7 +95,6 @@ void Display::keydown(unsigned char key, int x, int y) {
 	int index = lookup_key(key);
 	
 	if (index >= 0) {
-		std::lock_guard lck(Display::lock);
 		Display::keys.at(index) = true;
 	}
 }
@@ -108,7 +103,6 @@ void Display::keyup(unsigned char key, int x, int y) {
 	int index = lookup_key(key);
 
 	if (index >= 0) {
-		std::lock_guard lck(Display::lock);
 		Display::keys.at(index) = false;
 	}
 }

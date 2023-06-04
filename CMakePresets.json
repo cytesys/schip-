@@ -8,10 +8,22 @@
   "configurePresets": [
     {
       "name": "default",
-      "displayName": "Default Config",
-      "description": "Default build using Ninja generator",
+      "displayName": "Default Configuration",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build"
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "displayName": "Default Build",
+      "cleanFirst": true,
+      "verbose": false,
+      "configurePreset": "default"
     }
   ]
 }

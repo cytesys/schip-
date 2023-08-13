@@ -3,17 +3,31 @@
 #ifndef CHIP_H
 #define CHIP_H
 
-#include <random>
-#include <thread>
+#include <cstdint>
+#include <array>
 #include <chrono>
 #include <atomic>
 
-#include <schip/common.h>
 #include <schip/memory.h>
-#include <schip/display.h>
 
-#pragma pack(push, 1)
-union OPC {
+using Reg = uint16_t;
+using GPReg = uint8_t;
+using TimerReg = uint8_t;
+
+enum GKState {
+    GK_NOTHING = 0,
+    GK_PRESSED
+};
+
+enum ChipState {
+    CHIP_READY = 0,
+    CHIP_RUNNING,
+    CHIP_HALTED,
+    CHIP_STOPPED
+};
+
+#pragma pack(push, 2)
+union Opcode {
 #ifdef __BIG_ENDIAN__
 	struct {
 		uint8_t h : 4;
@@ -37,21 +51,17 @@ union OPC {
 		uint8_t o : 4;
 	};
 	struct {
-		uint8_t kk;
+        uint8_t kk;
 		uint8_t uu;
 	};
 	struct {
-		uint16_t nnn : 12;
-		uint8_t z: 4;
+        uint16_t nnn : 12;
+        uint8_t u: 4;
 	};
 #endif
 	uint16_t packed;
 };
 #pragma pack(pop)
-
-#define CHIP_VX (this->m_v.at(this->m_opc.x))
-#define CHIP_VY (this->m_v.at(this->m_opc.y))
-#define CHIP_VF (this->m_v.at(0xf))
 
 /**
  * A class to emulate the SChip interpreter.
@@ -62,36 +72,30 @@ union OPC {
  */
 class Chip {
 public:
-	/**
-	 * Initializes the interpreter.
-	 *
-	 * @param bus A pointer to a Bus instance.
-	 * @see Bus
-	 */
-	Chip(Bus& bus);
+    static Chip& get_instance() {
+        static Chip instance;
+        return instance;
+    }
 
 	/**
-	 * Destroys this interpreter object.
-	 */
-	~Chip();
-
-	/**
-	* Runs the interpreter.
+    * Runs the emulator (starts a run loop).
+    *
+    * This will stop either when the SChip/Chip8 program exits or when stop() is called.
 	*
-	* @throw std::runtime_error if there is an invalid or unimplemented opcode.
-	* @throw std::overflow_error if the stack is overflowed.
-	* @throw std::underflow_error if the stack is underflowed.
-	* @throw std::overflow_error if the screen buffer is overflowed.
-	* @throw std::out_of_range if an RPL user flag index is out of range.
-	* @throw std::out_of_range if a push operation is attempted with an invalid address.
-	* @throw std::out_of_range if a pop operation is attempted with an invalid address.
+    * @throws std::runtime_error if there is an invalid or unimplemented opcode.
+    * @throws std::overflow_error if the stack is overflowed.
+    * @throws std::underflow_error if the stack is underflowed.
+    * @throws std::overflow_error if the screen buffer is overflowed.
+    * @throws std::out_of_range if an RPL user flag index is out of range.
+    * @throws std::out_of_range if a push operation is attempted with an out of range address.
+    * @throws std::out_of_range if a pop operation is attempted with an out of range address.
 	*/
 	void run();
 
 	/**
-	 * Sets the stop flag for this instance.
-	 */
-	void stop();
+     * Sets the stop flag, breaking the run loop.
+     */
+    void stop() { m_stopflag.store(true); }
 
 	/**
 	 * Resets this instance.
@@ -100,87 +104,90 @@ public:
 
 private:
 	// General purpose registers
-	std::array<uint8_t, 16> m_v = {};
+    std::array<GPReg, 16> m_v{};
 
-	// Address register (12 bits)
-	uint16_t m_i;
+    // Address register (12 bits IRL, 16 bits here)
+    Reg m_i{};
 
-	// Stack pointer
-	uint16_t m_sp;
+    // Stack pointer
+    Reg m_sp{};
 
-	// Program counter
-	uint16_t m_pc;
+    // Program counter
+    Reg m_pc{};
 
-	// Timers
-	uint8_t m_dtimer;
-	uint8_t m_stimer;
+    // Timers
+    TimerReg m_dtimer{};
+    TimerReg m_stimer{};
 
-	// RPL user flags
-	std::array<uint8_t, 8> m_rpl = {};
+    // RPL user flags (S-CHIP)
+    std::array<Byte, 8> m_rpl{};
 
-	Bus& m_bus;
+    std::atomic<bool> m_stopflag{false};
+    std::chrono::high_resolution_clock::time_point m_lasttick{};
 
-	std::atomic<bool> m_stopflag = {false};
-	std::chrono::high_resolution_clock::time_point m_lasttick;
+    // Contains the current opcode
+    Opcode m_opc{};
 
-#pragma pack(push, 1)
-	OPC m_opc;
-#pragma pack(pop)
-	
-	bool m_ext = false;
+    Bus& m_bus;
 
-	void m_notimpl();
+    ChipState m_chipstate{CHIP_READY};
+    GKState m_key_state{GK_NOTHING};
 
-	void m_fetch();
-	void m_decode();
-	void m_update_timers();
+    Chip() : m_bus(Bus::get_instance()) { reset(); }
 
-	void m_push(uint16_t address);
-	uint16_t m_pop();
+    void not_implemented() const;
 
-	void op_scrd();
-	void op_clr();
-	void op_ret();
-	void op_scrr();
-	void op_scrl();
-	void op_exit();
-	void op_dex();
-	void op_eex();
-	void op_jmp();
-	void op_call();
-	void op_seq_imm();
-	void op_sne_imm();
-	void op_seq();
-	void op_ld();
-	void op_add_imm();
-	void op_mov();
-	void op_or();
-	void op_and();
-	void op_xor();
-	void op_add();
-	void op_sub();
-	void op_shr();
-	void op_sbr();
-	void op_shl();
-	void op_sne();
-	void op_ldi();
-	void op_jmpr();
-	void op_rand();
-	void op_draw();
-	void op_skp();
-	void op_sknp();
-	void op_get_delay();
-	void op_get_key();
-	void op_set_delay();
-	void op_set_stimer();
-	void op_addi();
-	void op_ld_sprite();
-	void op_ld_esprite();
-	void op_set_bcd();
-	void op_reg_dump();
-	void op_reg_store();
-	void op_reg_dump_rpl();
-	void op_reg_store_rpl();
+    void fetch();
+    void decode();
+    void update_timers();
+
+    void push(Addr address);
+    Addr pop();
+    void pop(Reg&);
+
+    inline void op_scrd();
+    inline void op_clr();
+    inline void op_ret();
+    inline void op_scrr();
+    inline void op_scrl();
+    inline void op_exit();
+    inline void op_dex();
+    inline void op_eex();
+    inline void op_jmp();
+    inline void op_call();
+    inline void op_seq_imm();
+    inline void op_sne_imm();
+    inline void op_seq();
+    inline void op_ld();
+    inline void op_add_imm();
+    inline void op_mov();
+    inline void op_or();
+    inline void op_and();
+    inline void op_xor();
+    inline void op_add();
+    inline void op_sub();
+    inline void op_shr();
+    inline void op_sbr();
+    inline void op_shl();
+    inline void op_sne();
+    inline void op_ldi();
+    inline void op_jmpr();
+    inline void op_rand();
+    inline void op_draw();
+    inline void op_skp();
+    inline void op_sknp();
+    inline void op_get_delay();
+    inline void op_get_key();
+    inline void op_set_delay();
+    inline void op_set_stimer();
+    inline void op_addi();
+    inline void op_ld_sprite();
+    inline void op_ld_esprite();
+    inline void op_set_bcd();
+    inline void op_reg_dump();
+    inline void op_reg_store();
+    inline void op_reg_dump_rpl();
+    inline void op_reg_store_rpl();
 };
 
 #endif

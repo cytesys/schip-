@@ -1,7 +1,15 @@
+#include <cassert>
+#include <array>
+#include <fstream>
+
 #include <schip/memory.h>
 
-// 4x5 pixel hexadecimal character font patterns
-constexpr std::array<uint8_t, 80> HEX_FONT = {
+constexpr Addr USERCODE_BEG = 0x200;
+constexpr Addr USERCODE_END = 0x1000;
+constexpr size_t USERCODE_SIZE = USERCODE_END - USERCODE_BEG;
+
+// 4*5 pixel hex font patterns
+constexpr std::array<Byte, 0x50> HEX_FONT = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
     0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -20,8 +28,8 @@ constexpr std::array<uint8_t, 80> HEX_FONT = {
     0xF0, 0x80, 0xF0, 0x80, 0x80  // F
 };
 
-// 8x10 pixel font patterns(only 10)
-constexpr std::array<uint8_t, 100> BIG_HEX_FONT = {
+// 8*10 pixel font patterns(decimal digits only)
+constexpr std::array<Byte, 0x64> BIG_FONT = {
     0x3c, 0x7e, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0x7e, 0x3c, // 0
     0x18, 0x38, 0x58, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3c, // 1
     0x3e, 0x7f, 0xc3, 0x06, 0x0c, 0x18, 0x30, 0x60, 0xff, 0xff, // 2
@@ -34,79 +42,83 @@ constexpr std::array<uint8_t, 100> BIG_HEX_FONT = {
     0x3c, 0x7e, 0xc3, 0xc3, 0x7f, 0x3f, 0x03, 0x03, 0x3e, 0x7c  // 9
 };
 
-Bus::Bus() : m_data({}) {}
+Bus::Bus()
+    : m_data(reinterpret_cast<char*>(calloc(USERCODE_SIZE, sizeof(Byte))))
+{}
 
-Bus::~Bus() {}
+Bus::~Bus() { if (m_data) delete m_data; }
 
-uint8_t Bus::read(uint16_t addr) const {
-    if (addr >= MEM_ADDR_END) {
-        fprintf(stderr, "Tried to read from address [0x%.4x]\n", addr);
+Byte Bus::read(Addr addr) const {
+    if (addr >= USERCODE_END) {
+#if(DEBUG)
+        fprintf(stderr, "Tried to read from address [0x%04x]\n", addr);
+#endif
         throw std::out_of_range("Bus read: Address is out of range");
     }
     
-    if (addr < 0x50) {
-        return HEX_FONT.at(addr);
-    } else if (addr < 0xb4) {
-        return BIG_HEX_FONT.at(addr - 0x50);
-    } else if (addr < MEM_ADDR_BEG) {
-        // Empty/unused space
-        fprintf(stderr, "Warning: Reading garbage from [0x%.4x]\n", addr);
-        return 0xff;
+    if (addr < HEX_FONT.size()) {
+        return HEX_FONT[addr];
+    } else if (addr < HEX_FONT.size() + BIG_FONT.size()) {
+        return BIG_FONT[addr - HEX_FONT.size()];
+    } else if (addr < USERCODE_BEG) {
+#if(DEBUG)
+        printf("Warning: Reading garbage from address [0x%04x]\n", addr);
+#endif
+        // This space contains the code for the chip8 interpreter irl.
+        return 0xcc; // Return "garbage". 0xcc is easy to spot.
     }
 
-    return this->m_data.at(addr - MEM_ADDR_BEG);
+    return m_data[addr - USERCODE_BEG];
 }
 
-void Bus::write(uint16_t addr, uint8_t byte) {
-    if (addr < MEM_ADDR_BEG || addr >= MEM_ADDR_END) {
-        fprintf(stderr, "Tried to write to address [0x%.4x]\n", addr);
+void Bus::write(Addr addr, Byte byte) {
+    if (addr < USERCODE_BEG || addr >= USERCODE_END) {
+#if(DEBUG)
+        printf("Tried to write to address [0x%04x]\n", addr);
+#endif
         throw std::out_of_range("Bus write: Address is out of range");
     }
 
-    this->m_data.at(addr - MEM_ADDR_BEG) = byte;
+    m_data[addr - USERCODE_BEG] = byte;
 }
 
-void Bus::load_program(const char* const filename) {
-    struct stat info;
-    int status = stat(filename, &info);
-
-    if (status == -1) {
-        throw std::runtime_error("File not found!");
-    }
-    
-    const size_t bufsize = MEM_ADDR_END - MEM_ADDR_BEG;
-    char buffer[bufsize] = {};
-
-    std::ifstream file(
+void Bus::load_program(std::filesystem::path filename) {
+    std::ifstream file{
         filename,
         std::ios_base::in | std::ios::binary
-    );
+    };
 
-    if (file.peek() != EOF) {
-        file.read(buffer, bufsize);
-        size_t read = file.gcount();
+    if (!file.is_open())
+        throw std::runtime_error("File not found");
 
-        if (read == 0) {
-            throw std::runtime_error("Could not read from file; read 0 bytes");
-        }
+    if (!file)
+        throw std::runtime_error("Cannot open file");
 
-        // Copy everything into m_mem.
-        for (int i = 0; i < read; i++) {
-            this->m_data.at(i) = buffer[i];
-        }
+    file.seekg(0, std::ios::end);
+    size_t filesize = file.tellg();
+    file.seekg(0, std::ios::beg);
 
-        if (file.peek() != EOF) {
-            // There's more data??
-            file.close();
-            throw std::length_error(
-                "The file is too big! Is this really a chip8 program?"
-            );
-        }
+#if(DEBUG)
+    printf("The file is %lld bytes.\n", filesize);
+#endif
 
-    } else {
-        file.close();
-        throw std::runtime_error("Cannot read from file. Is it empty?");
-    }
+    if (!filesize)
+        throw std::runtime_error("The file is empty");
+
+    if (filesize > USERCODE_SIZE)
+        throw std::invalid_argument("The file is too big to be a chip8/schip program");
+
+    file.read(m_data, USERCODE_SIZE);
+    size_t read = file.gcount();
+
+#if(DEBUG)
+    printf("Read %lld bytes.\n", read);
+#endif
+
+    assert(read <= USERCODE_SIZE);
+
+    if (read == 0)
+        throw std::runtime_error("Couldn't read anything from the file...");
 
     file.close();
 }

@@ -3,14 +3,11 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
-#include <fstream>
-#include <sys/types.h>
-#include <sys/stat.h>
+#include <cstdint>
+#include <filesystem>
 
-#include <schip/common.h>
-
-constexpr size_t MEM_ADDR_BEG = 0x200;
-constexpr size_t MEM_ADDR_END = 0x1000;
+using Addr = uint16_t;
+using Byte = uint8_t;
 
 /**
  * This class emulates memory for SChip/Chip8.
@@ -20,8 +17,10 @@ constexpr size_t MEM_ADDR_END = 0x1000;
  */
 class Bus {
 public:
-	Bus();
-	~Bus();
+    static Bus& get_instance() {
+        static Bus instance;
+        return instance;
+    }
 
 	/**
 	 * Reads one byte from memory.
@@ -32,7 +31,7 @@ public:
 	 * @return						The 8-bit value stored at that address.
 	 * @throw std::out_of_range		if the address is out of range.
 	 */
-	uint8_t read(uint16_t address) const;
+    [[nodiscard]] Byte read(Addr) const;
 
 	/**
 	 * Writes one byte to memory.
@@ -43,7 +42,7 @@ public:
 	 * @param byte				The 8-bit value to be written.
 	 * @throw std::out_of_range	if the address is out of range.
 	 */
-	void write(uint16_t address, uint8_t byte);
+    void write(Addr, Byte);
 
 	/**
 	 * Loads a program into memory.
@@ -55,10 +54,13 @@ public:
 	 *							 space in memory.
 	 * @throw std::runtime_error if the file cannot be read.
 	 */
-	void load_program(const char* const filename);
+    void load_program(std::filesystem::path filename);
 
 private:
-	std::array<uint8_t, MEM_ADDR_END - MEM_ADDR_BEG> m_data;
+    Bus();
+    ~Bus();
+
+    char* const m_data{nullptr};
 };
 
 #endif

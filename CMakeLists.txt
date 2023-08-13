@@ -1,40 +1,23 @@
-﻿cmake_minimum_required (VERSION 3.8)
+﻿cmake_minimum_required (VERSION 3.16)
 
-project ("SCHIP++" VERSION 1.1.0)
+project ("SCHIP++" VERSION 1.2.0)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL REQUIRED)
 find_package(GLUT REQUIRED)
 
-set(SCHIP_SRC_DIR "${CMAKE_SOURCE_DIR}/src")
-set(SCHIP_INC_DIR "${CMAKE_SOURCE_DIR}/include")
+set(SCHIP_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(SCHIP_INC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(SCHIP_HDR_DIR "${SCHIP_INC_DIR}/schip")
 
-configure_file(
-	"${SCHIP_HDR_DIR}/config.h.in"
-	"${SCHIP_HDR_DIR}/config.h"
-)
+add_subdirectory(src)
 
-set(SCHIP_HEADERS
-	"${SCHIP_HDR_DIR}/config.h"
-	"${SCHIP_HDR_DIR}/common.h"
-	"${SCHIP_HDR_DIR}/memory.h"
-	"${SCHIP_HDR_DIR}/chip.h"
-	"${SCHIP_HDR_DIR}/display.h"
-)
-
-set(SCHIP_SRC
-	"${SCHIP_SRC_DIR}/memory.cpp"
-	"${SCHIP_SRC_DIR}/chip.cpp"
-	"${SCHIP_SRC_DIR}/display.cpp"
-	"${SCHIP_SRC_DIR}/main.cpp"
-)
-
-add_executable(chip8 ${SCHIP_SRC} ${SCHIP_HEADERS})
+add_executable(chip8 ${SCHIP_SOURCES} ${SCHIP_HEADERS})
+target_compile_definitions(chip8 PRIVATE "__apple__=$<COMPILE_LANG_AND_ID:CXX,AppleClang>")
+target_compile_definitions(chip8 PRIVATE "DEBUG=$<CONFIG:Debug>")
 target_include_directories(chip8 PRIVATE ${SCHIP_INC_DIR})
 target_link_libraries(chip8 PRIVATE OpenGL::GL)
 target_link_libraries(chip8 PRIVATE GLUT::GLUT)
-
-if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(GLOBAL PROPERTY CXX_STANDARD 20)
-endif()
